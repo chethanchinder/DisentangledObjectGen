@@ -15,7 +15,7 @@ import glob
 
 class ShapeNet(data.Dataset):
     def __init__(self,
-                 objectfile="/home/chethanc/reconstruction/data/TMNetMesh/customShapeNet_mat",
+                 objectfile="/home/chethanc/reconstruction/data/customShapeNet_mat",
                  class_choice = "chair",
                  train = True, npoints = 2500, normal = False,
                  idx=0, extension = 'png'):
