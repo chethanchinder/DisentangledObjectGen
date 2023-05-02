@@ -72,10 +72,9 @@ class ShapeNet(data.Dataset):
                 self.meta[item] = []
                 for fn in fns:
                     shape_onehot_int = label_encoder.transform([fn])
-                    shape_onehot_vec = onehot_encoder.transform([shape_onehot_int])
+                    shape_onehot_vec = onehot_encoder.transform([shape_onehot_int]).squeeze()
                     class_vec = np.array([1])
                     pose_vec =  np.array([0, 0, 0])
-
                     self.meta[item].append((class_vec, shape_onehot_vec,
                                     pose_vec,os.path.join(dir_point, fn+'.mat'),
                                     item, fn ) )
@@ -132,8 +131,9 @@ if __name__  == '__main__':
     time1 = time.time()
     for i, data in enumerate(dataloader, 0):
         class_vec, shape_onehot_vec, pose_vec,points, normals, name, cat = data
-        print(class_vec, shape_onehot_vec, pose_vec)
-        print(points.shape,normals.shape)
-        print(cat[0],name[0],points.max(),points.min())
+        print("input shapes ", class_vec.shape, shape_onehot_vec.shape, pose_vec.shape)
+        print("points shape ",points.shape,normals.shape)
+        exit()
+        #print(cat[0],name[0],points.max(),points.min())
     time2 = time.time()
     print(time2-time1)

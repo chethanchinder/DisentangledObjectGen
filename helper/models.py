@@ -177,7 +177,7 @@ class SVR_TMNet(nn.Module):
 
 
 class Pretrain(nn.Module):
-    def __init__(self,  bottleneck_size = 1024,num_points=2500):
+    def __init__(self,  bottleneck_size = 1024,num_points=2500, class_dim =1, shape_dim = 5422 , pose_dim = 3):
         super(Pretrain, self).__init__()
         self.bottleneck_size = bottleneck_size
         self.num_points = num_points
@@ -187,9 +187,9 @@ class Pretrain(nn.Module):
         nn.BatchNorm1d(self.bottleneck_size),
         nn.ReLU()
         )
-        self.class_dim = 1
-        self.shape_dim = 100
-        self.pose_dim = 3
+        self.class_dim = class_dim
+        self.shape_dim = shape_dim
+        self.pose_dim = pose_dim
         self.encoder = EmbeddingNet(class_dim = self.class_dim, 
                         shape_dim = self.shape_dim,
                         pose_dim = self.pose_dim,
@@ -229,7 +229,7 @@ class BasicEmbedding(nn.Module):
 
 class EmbeddingNet(nn.Module):
 
-    def __init__(self, class_dim = 1, shape_dim = 1000, pose_dim = 3, output_dim = 1024):
+    def __init__(self, class_dim = 1, shape_dim = 5422, pose_dim = 3, output_dim = 1024):
         super(EmbeddingNet, self).__init__()
         self.class_embedding = BasicEmbedding( class_dim, output_dim)
         self.shape_embedding = BasicEmbedding( shape_dim, output_dim)
@@ -237,7 +237,8 @@ class EmbeddingNet(nn.Module):
         self.linear          = nn.Linear(3*output_dim, output_dim)
         self.bn              = torch.nn.BatchNorm1d(output_dim)
 
-    def forward(self, class_vec, shape_vec, pose_vec ):
+    def forward(self, x ): 
+        class_vec, shape_vec, pose_vec = x[:,0].unsqueeze(1), x[:,1:5422],  x[:,5423:]
         class_embed = self.class_embedding(class_vec)
         shape_embed = self.shape_embedding(shape_vec)
         pose_embed  = self.pose_embedding(pose_vec)

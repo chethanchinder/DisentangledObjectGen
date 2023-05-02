@@ -19,7 +19,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--batchSize', type=int, default=32, help='input batch size')
 parser.add_argument('--workers', type=int, help='number of data loading workers', default=12)
 parser.add_argument('--nepoch', type=int, default=420, help='number of epochs to train for')
-parser.add_argument('--model', type=str, default='', help='optional reload model path')
+parser.add_argument('--model', type=str, default='./log/pretrain/network.pth', help='optional reload model path')
 parser.add_argument('--num_points', type=int, default=2500, help='number of points')
 parser.add_argument('--nb_primitives', type=int, default=1, help='number of primitives in the atlas')
 parser.add_argument('--super_points', type=int, default=2500,
@@ -27,6 +27,7 @@ parser.add_argument('--super_points', type=int, default=2500,
 parser.add_argument('--env', type=str, default="pretrain", help='visdom environment')
 parser.add_argument('--lr',type=float,default=1e-3, help='initial learning rate')
 parser.add_argument('--manualSeed', type=int, default=42)
+parser.add_argument('--resume_epoch', type=int, default = 0)
 opt = parser.parse_args()
 print(opt)
 
@@ -44,7 +45,7 @@ blue = lambda x: '\033[94m' + x + '\033[0m'
 print("Random Seed: ", opt.manualSeed)
 random.seed(opt.manualSeed)
 torch.manual_seed(opt.manualSeed)
-
+resume_epoch = opt.resume_epoch
 dataset = ShapeNet(npoints=opt.num_points, normal=False, train=True, class_choice='chair')
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batchSize,
                                          shuffle=True, num_workers=int(opt.workers))
@@ -78,7 +79,7 @@ with open(logname, 'a') as f:  # open and append
 train_curve = []
 val_curve = []
 
-for epoch in range(opt.nepoch):
+for epoch in range(resume_epoch, opt.nepoch):
     # TRAIN MODE
     train_loss.reset()
     network.train()
@@ -102,7 +103,8 @@ for epoch in range(opt.nepoch):
         points = points[:, :, :opt.super_points].contiguous()
         # END SUPER RESOLUTION
         if epoch >= 120:
-            pointsRec = network( class_vec, shape_onehot_vec, pose_vec , mode='param')
+            input = torch.cat([class_vec, shape_onehot_vec, pose_vec], dim = 1).float().cuda()
+            pointsRec = network( input , mode='param')
         else:
             pointsRec = network(points)  # forward pass
         dist1, dist2,_,_ = distChamfer(points.transpose(2, 1).contiguous(), pointsRec)  # loss function
