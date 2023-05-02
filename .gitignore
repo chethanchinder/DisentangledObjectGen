@@ -2,3 +2,4 @@ extension/build/
 extension/chamfer.egg-info/
 extension/dist/
 __pycache__
+log/
