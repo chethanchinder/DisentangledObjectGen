@@ -18,7 +18,7 @@ import visdom
 parser = argparse.ArgumentParser()
 parser.add_argument('--batchSize', type=int, default=32, help='input batch size')
 parser.add_argument('--workers', type=int, help='number of data loading workers', default=12)
-parser.add_argument('--nepoch', type=int, default=2, help='number of epochs to train for')
+parser.add_argument('--nepoch', type=int, default=420, help='number of epochs to train for')
 parser.add_argument('--model', type=str, default='', help='optional reload model path')
 parser.add_argument('--num_points', type=int, default=2500, help='number of points')
 parser.add_argument('--nb_primitives', type=int, default=1, help='number of primitives in the atlas')
@@ -34,7 +34,7 @@ sys.path.append("./extension/")
 import dist_chamfer as ext
 distChamfer = ext.chamferDist()
 
-vis = visdom.Visdom(port=8888, env=opt.env)
+vis = visdom.Visdom(port=8097, env=opt.env)
 now = datetime.datetime.now()
 save_path = opt.env
 dir_name = os.path.join('./log', save_path)
