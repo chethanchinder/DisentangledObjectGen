@@ -192,7 +192,7 @@ class Pretrain(nn.Module):
         self.pose_dim = 3
         self.encoder = EmbeddingNet(class_dim = self.class_dim, 
                         shape_dim = self.shape_dim,
-                        pose_dim = self.pose_dim
+                        pose_dim = self.pose_dim,
                         output_dim=self.bottleneck_size)
         self.decoder = nn.ModuleList([DeformNet(bottleneck_size=3 + self.bottleneck_size)])
 
@@ -202,7 +202,6 @@ class Pretrain(nn.Module):
         else:
             x = self.encoder(x)
         rand_grid = torch.cuda.FloatTensor(x.size(0),3,self.num_points)
-        print(" rand grid size  ", rand_grid.size)
         rand_grid.data.normal_(0,1)
         rand_grid = rand_grid / torch.sqrt(torch.sum(rand_grid**2, dim=1, keepdim=True))\
             .expand(x.size(0),3,self.num_points)

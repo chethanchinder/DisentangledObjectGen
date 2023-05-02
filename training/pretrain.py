@@ -5,9 +5,9 @@ import numpy as np
 import torch
 import torch.optim as optim
 import sys
-sys.path.append('./auxiliary/')
+sys.path.append('./helper/')
 from dataset import *
-from model import *
+from models import *
 from utils import *
 from ply import *
 import os
@@ -38,18 +38,17 @@ vis = visdom.Visdom(port=8888, env=opt.env)
 now = datetime.datetime.now()
 save_path = opt.env
 dir_name = os.path.join('./log', save_path)
-if not os.path.exists(dir_name):
-    os.mkdir(dir_name)
+os.makedirs(dir_name, exist_ok= True)
 logname = os.path.join(dir_name, 'log.txt')
 blue = lambda x: '\033[94m' + x + '\033[0m'
 print("Random Seed: ", opt.manualSeed)
 random.seed(opt.manualSeed)
 torch.manual_seed(opt.manualSeed)
 
-dataset = ShapeNet(npoints=opt.num_points, SVR=True, normal=False, train=True, class_choice='chair')
+dataset = ShapeNet(npoints=opt.num_points, normal=False, train=True, class_choice='chair')
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batchSize,
                                          shuffle=True, num_workers=int(opt.workers))
-dataset_test = ShapeNet(npoints=opt.num_points, SVR=True, normal=False, train=False, class_choice='chair')
+dataset_test = ShapeNet(npoints=opt.num_points, normal=False, train=False, class_choice='chair')
 dataloader_test = torch.utils.data.DataLoader(dataset_test, batch_size=opt.batchSize,
                                               shuffle=False, num_workers=int(opt.workers))
 
@@ -139,7 +138,7 @@ for epoch in range(opt.nepoch):
     network.eval()
     with torch.no_grad():
         for i, data in enumerate(dataloader_test, 0):
-            points, normals, name, cat = data
+            class_vec, shape_onehot_vec, pose_vec, points, normals, name, cat = data
             points = points.transpose(2, 1).contiguous()
             points = points.cuda()
             # SUPER_RESOLUTION
