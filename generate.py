@@ -36,8 +36,8 @@ blue = lambda x:'\033[94m' + x + '\033[0m'
 print("Random Seed: ", opt.manualSeed)
 random.seed(opt.manualSeed)
 torch.manual_seed(opt.manualSeed)
-
-dataset_test = ShapeNet(npoints=opt.num_points, SVR=True, normal=True, train=False,class_choice='chair')
+batch_size = opt.batchSize
+dataset_test = ShapeNet(npoints=opt.num_points, normal=True, train=False,class_choice='chair')
 dataloader_test = torch.utils.data.DataLoader(dataset_test, batch_size=opt.batchSize,
                                          shuffle=False, num_workers=int(opt.workers))
 print('testing set', len(dataset_test.datapath))
@@ -66,27 +66,27 @@ network.eval()
 
 with torch.no_grad():
     for i, data in enumerate(dataloader_test, 0):
-        img, points, normals, name, cat = data
+        class_vec, shape_onehot_vec, pose_vec, points, normals, name, cat = data
         cat = cat[0]
         fn = name[0]
-        img = img.cuda()
+        input = torch.cat([class_vec, shape_onehot_vec, pose_vec], dim = 1).float().cuda() 
         points = points.cuda()
         choice = np.random.choice(points.size(1), opt.num_vertices, replace=False)
         points_choice = points[:, choice, :].contiguous()
-        vertices_input = (vertices_sphere.expand(img.size(0), vertices_sphere.size(1),
+        vertices_input = (vertices_sphere.expand(batch_size, vertices_sphere.size(1),
                                                  vertices_sphere.size(2)).contiguous())
-        pointsRec  = network(img, vertices_input,mode='deform1')
+        pointsRec  = network(input, vertices_input,mode='deform1')
         pointsRec_samples, index = samples_random(faces_cuda, pointsRec, opt.num_points)
-        error = network(img, pointsRec_samples.detach().transpose(1, 2),mode='estimate')
+        error = network(input, pointsRec_samples.detach().transpose(1, 2),mode='estimate')
         faces_cuda_bn = faces_cuda.unsqueeze(0)
         faces_cuda_bn = prune(faces_cuda_bn, error, opt.tau, index, opt.pool)
         triangles_c1 = faces_cuda_bn[0].cpu().data.numpy()
 
         ###################################################################################################
         if opt.subnet > 1:
-            pointsRec2 = network(img, pointsRec,mode='deform2')
+            pointsRec2 = network(input, pointsRec,mode='deform2')
             pointsRec2_samples, index = samples_random(faces_cuda_bn, pointsRec2, opt.num_points)
-            error = network(img, pointsRec2_samples.detach().transpose(1, 2),mode='estimate2')
+            error = network(input, pointsRec2_samples.detach().transpose(1, 2),mode='estimate2')
             faces_cuda_bn = faces_cuda_bn.clone()
             faces_cuda_bn = prune(faces_cuda_bn, error, opt.tau/opt.tau_decay, index, opt.pool)
             triangles_c2 = faces_cuda_bn[0].cpu().data.numpy()
@@ -106,12 +106,12 @@ with torch.no_grad():
 
             if pointsRec2_boundary.shape[1] != 0:
                 pointsRec3_boundary = network\
-                    (img, pointsRec2_boundary[:, :, 0], vector1, vector2,mode='refine')
+                    (input, pointsRec2_boundary[:, :, 0], vector1, vector2,mode='refine')
             else:
                 pointsRec3_boundary = pointsRec2_boundary[:, :, 0]
 
             pointsRec3_set = []
-            for ibatch in torch.arange(0, img.shape[0]):
+            for ibatch in torch.arange(0, batch_size):
                 length = selected_pair_all_len[ibatch]
                 if length != 0:
                     # index_bp = boundary_points_all[ibatch][:length]

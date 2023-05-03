@@ -5,9 +5,9 @@ import numpy as np
 import torch
 import torch.optim as optim
 import sys
-sys.path.append('./auxiliary/')
+sys.path.append('./helper/')
 from dataset import *
-from model import *
+from models import *
 from utils import *
 from ply import *
 import os
@@ -20,7 +20,7 @@ from loss import *
 parser = argparse.ArgumentParser()
 parser.add_argument('--batchSize', type=int, default=32, help='input batch size')
 parser.add_argument('--workers', type=int, help='number of data loading workers', default=12)
-parser.add_argument('--nepoch', type=int, default=120, help='number of epochs to train for')
+parser.add_argument('--nepoch', type=int, default=60, help='number of epochs to train for')
 parser.add_argument('--epoch_decay',type=int,default=100,help='epoch to decay lr')
 parser.add_argument('--model', type=str,default='./log/SVR_subnet2/network.pth',help='model path from the trained subnet2')
 parser.add_argument('--num_points', type=int, default=10000, help='number of points for GT point cloud')
@@ -33,6 +33,9 @@ parser.add_argument('--lambda_boundary', type=float, default=0.5)
 parser.add_argument('--lambda_displace', type=float, default=0.2)
 parser.add_argument('--pool',type=str,default='max',help='max or mean or sum' )
 parser.add_argument('--manualSeed',type=int,default=6185)
+parser.add_argument('--resume_epoch', type=int, default = 0)
+
+
 opt = parser.parse_args()
 print(opt)
 
@@ -41,7 +44,7 @@ import dist_chamfer as ext
 distChamfer = ext.chamferDist()
 
 server = 'http://localhost/'
-vis = visdom.Visdom(server=server, port=8888, env=opt.env, use_incoming_socket=False)
+vis = visdom.Visdom(server=server, port=8097, env=opt.env, use_incoming_socket=False)
 now = datetime.datetime.now()
 save_path = opt.env
 dir_name = os.path.join('./log', save_path)
@@ -52,11 +55,11 @@ blue = lambda x: '\033[94m' + x + '\033[0m'
 print("Random Seed: ", opt.manualSeed)
 random.seed(opt.manualSeed)
 torch.manual_seed(opt.manualSeed)
-
-dataset = ShapeNet(npoints=opt.num_points, SVR=True, normal=True,train=True,class_choice='chair')
+batch_size = opt.batchSize
+dataset = ShapeNet(npoints=opt.num_points, normal=True,train=True,class_choice='chair')
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batchSize,
                                          shuffle=True, num_workers=int(opt.workers))
-dataset_test = ShapeNet(npoints=opt.num_points, SVR=True, normal=True, train=False,class_choice='chair')
+dataset_test = ShapeNet(npoints=opt.num_points, normal=True, train=False,class_choice='chair')
 dataloader_test = torch.utils.data.DataLoader(dataset_test, batch_size=opt.batchSize,
                                          shuffle=False, num_workers=int(opt.workers))
 print('training set', len(dataset.datapath))
@@ -64,7 +67,7 @@ print('testing set', len(dataset_test.datapath))
 len_dataset = len(dataset)
 
 name = 'sphere' + str(opt.num_vertices) + '.mat'
-mesh = sio.loadmat('./data/' + name)
+mesh = sio.loadmat('./extras/' + name)
 faces = np.array(mesh['f'])
 faces_cuda = torch.from_numpy(faces.astype(int)).type(torch.cuda.LongTensor)
 vertices_sphere = np.array(mesh['v'])
@@ -119,25 +122,26 @@ for epoch in range(opt.nepoch):
 
     for i, data in enumerate(dataloader, 0):
         optimizer.zero_grad()
-        img, points, normals, name, cat = data
-        img = img.cuda()
+        class_vec, shape_onehot_vec, pose_vec, points, normals, name, cat = data
+        input = torch.cat([class_vec, shape_onehot_vec, pose_vec], dim = 1).float().cuda()    
         points = points.cuda()
         normals = normals.cuda()
+        
         choice = np.random.choice(points.size(1), opt.num_vertices, replace=False)
         points_choice = points[:, choice, :].contiguous()
-        vertices_input = (vertices_sphere.expand(img.size(0), vertices_sphere.size(1),
+        vertices_input = (vertices_sphere.expand(batch_size, vertices_sphere.size(1),
                                                  vertices_sphere.size(2)).contiguous())
 
         with torch.no_grad():
-            pointsRec = network(img, vertices_input,mode='deform1')
+            pointsRec = network(input, vertices_input,mode='deform1')
             pointsRec_samples, index = samples_random(faces_cuda, pointsRec.detach(), opt.num_points)
-            error_stage1 = network(img, pointsRec_samples.detach().transpose(1, 2),mode='estimate')
-            faces_cuda_bn = faces_cuda.unsqueeze(0).expand(img.size(0), faces_cuda.size(0), faces_cuda.size(1))
+            error_stage1 = network(input, pointsRec_samples.detach().transpose(1, 2),mode='estimate')
+            faces_cuda_bn = faces_cuda.unsqueeze(0).expand(batch_size, faces_cuda.size(0), faces_cuda.size(1))
             faces_cuda_bn = prune(faces_cuda_bn.detach(), error_stage1.detach(), opt.tau, index, opt.pool)
 
-            pointsRec2 = network(img, pointsRec, mode='deform2')
+            pointsRec2 = network(input, pointsRec, mode='deform2')
             pointsRec2_samples, index = samples_random(faces_cuda_bn.detach(), pointsRec2, opt.num_points)
-            error = network(img, (pointsRec2_samples.detach()).transpose(1, 2), mode='estimate2')
+            error = network(input, (pointsRec2_samples.detach()).transpose(1, 2), mode='estimate2')
             faces_cuda_bn = faces_cuda_bn.clone()
             faces_cuda_bn = prune(faces_cuda_bn, error.detach(), opt.tau/opt.tau_decay, index, opt.pool)
 
@@ -153,7 +157,7 @@ for epoch in range(opt.nepoch):
 
         # refine the boundary and get the displace loss
         if pointsRec2_boundary.shape[1] != 0:
-            pointsRec3_boundary = network(img, pointsRec2_boundary[:, :, 0], vector1, vector2, mode='refine')
+            pointsRec3_boundary = network(input, pointsRec2_boundary[:, :, 0], vector1, vector2, mode='refine')
         else:
             pointsRec3_boundary = pointsRec2_boundary[:, :, 0]
         displace_loss = pointsRec3_boundary - pointsRec2_boundary[:, :, 0]
@@ -161,7 +165,7 @@ for epoch in range(opt.nepoch):
 
         # get the final refined mesh and cd loss
         pointsRec3_set = []
-        for ibatch in torch.arange(0, img.shape[0]):
+        for ibatch in torch.arange(0, batch_size):
             length = selected_pair_all_len[ibatch]
             if length != 0:
                 index_bp = selected_pair_all[ibatch][:, 0][:length]
@@ -201,7 +205,6 @@ for epoch in range(opt.nepoch):
 
         # VIZUALIZE
         if i % 50 <= 0:
-            vis.image(img[0].data.cpu().contiguous(), win='INPUT IMAGE TRAIN', opts=dict(title="INPUT IMAGE TRAIN"))
             vis.scatter(X=points_choice[0].data.cpu(),
                         win='TRAIN_INPUT',
                         opts=dict(
@@ -233,23 +236,23 @@ for epoch in range(opt.nepoch):
 
         network.eval()
         for i, data in enumerate(dataloader_test, 0):
-            img, points, normals, name, cat = data
-            img = img.cuda()
+            class_vec, shape_onehot_vec, pose_vec, points, normals, name, cat = data
+            input = torch.cat([class_vec, shape_onehot_vec, pose_vec], dim = 1).float().cuda() 
             points = points.cuda()
             normals = normals.cuda()
             choice = np.random.choice(points.size(1), opt.num_vertices, replace=False)
             points_choice = points[:, choice, :].contiguous()
-            vertices_input = (vertices_sphere.expand(img.size(0), vertices_sphere.size(1),
+            vertices_input = (vertices_sphere.expand(batch_size, vertices_sphere.size(1),
                                                      vertices_sphere.size(2)).contiguous())
-            pointsRec = network(img, vertices_input,mode='deform1')  # vertices_sphere 3*2562
+            pointsRec = network(input, vertices_input,mode='deform1')  # vertices_sphere 3*2562
             pointsRec_samples, index = samples_random(faces_cuda, pointsRec.detach(), opt.num_points)
-            error = network(img, pointsRec_samples.detach().transpose(1, 2),mode='estimate')
-            faces_cuda_bn = faces_cuda.unsqueeze(0).expand(img.size(0), faces_cuda.size(0), faces_cuda.size(1))
+            error = network(input, pointsRec_samples.detach().transpose(1, 2),mode='estimate')
+            faces_cuda_bn = faces_cuda.unsqueeze(0).expand(batch_size, faces_cuda.size(0), faces_cuda.size(1))
             faces_cuda_bn = prune(faces_cuda_bn, error, opt.tau, index, opt.pool)
 
-            pointsRec2 = network(img, pointsRec, mode='deform2')
+            pointsRec2 = network(input, pointsRec, mode='deform2')
             pointsRec2_samples, index = samples_random(faces_cuda_bn, pointsRec2, opt.num_points)
-            error = network(img, pointsRec2_samples.detach().transpose(1, 2), mode='estimate2')
+            error = network(input, pointsRec2_samples.detach().transpose(1, 2), mode='estimate2')
             faces_cuda_bn = faces_cuda_bn.clone()
             faces_cuda_bn = prune(faces_cuda_bn, error, opt.tau/opt.tau_decay, index, opt.pool)
 
@@ -267,7 +270,7 @@ for epoch in range(opt.nepoch):
             # refine the boundary and get the displace loss
             if pointsRec2_boundary.shape[1] != 0:
                 pointsRec3_boundary = network\
-                    (img, pointsRec2_boundary[:, :, 0], vector1, vector2, mode='refine')
+                    (input, pointsRec2_boundary[:, :, 0], vector1, vector2, mode='refine')
             else:
                 pointsRec3_boundary = pointsRec2_boundary[:, :, 0]
             displace_loss = pointsRec3_boundary - pointsRec2_boundary[:, :, 0]
@@ -275,7 +278,7 @@ for epoch in range(opt.nepoch):
 
             # get the final refined mesh and cd loss
             pointsRec3_set = []
-            for ibatch in torch.arange(0, img.shape[0]):
+            for ibatch in torch.arange(0, batch_size):
                 length = selected_pair_all_len[ibatch]
                 if length != 0:
                     index_bp = selected_pair_all[ibatch][:, 0][:length]
@@ -313,7 +316,6 @@ for epoch in range(opt.nepoch):
             dataset_test.perCatValueMeter[cat[0]].update(cds_stage3.item())
 
             if i % 25 == 0:
-                vis.image(img[0].data.cpu().contiguous(), win='INPUT IMAGE VAL', opts=dict(title="INPUT IMAGE TRAIN"))
                 vis.scatter(X=points_choice[0].data.cpu(),
                             win='VAL_INPUT',
                             opts=dict(
