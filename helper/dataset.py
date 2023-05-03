@@ -48,13 +48,8 @@ class ShapeNet(data.Dataset):
                 continue
 
             fns = [val.split('.')[0] for val in fns_pc]
-            print('category ', self.cat[item], 'files ' + str(len(fns)), len(fns)/float(len(fns_pc)), "%"),
-            if train:
-                fns = fns[:int(len(fns) * 0.8)]
-            else:
-                fns = fns[int(len(fns) * 0.8):]
-
-            # define example
+            print('category ', self.cat[item], 'files ' + str(len(fns)), len(fns)/float(len(fns_pc)), "%")
+                        # total values
             fns_values = np.array(fns)
             # integer encode
             label_encoder = LabelEncoder()
@@ -67,6 +62,12 @@ class ShapeNet(data.Dataset):
             # first example
             # integer_fns = label_encoder.transform([fns_values[2]])
             # one_hot_vector = onehot_encoder.transform([integer_fns])
+
+            if train:
+                fns = fns[:int(len(fns) * 0.8)]
+            else:
+                fns = fns[int(len(fns) * 0.8):]
+
             
             if len(fns) != 0:
                 self.meta[item] = []
@@ -124,7 +125,7 @@ class ShapeNet(data.Dataset):
 if __name__  == '__main__':
     print('Testing Shapenet dataset')
     dataset  =  ShapeNet(class_choice = None,
-                 train = True, npoints = 10000,
+                 train = False, npoints = 10000,
                 normal = True, idx=0)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=32,
                                              shuffle=True, num_workers=int(12))

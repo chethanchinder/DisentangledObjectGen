@@ -18,8 +18,8 @@ import visdom
 parser = argparse.ArgumentParser()
 parser.add_argument('--batchSize', type=int, default=32, help='input batch size')
 parser.add_argument('--workers', type=int, help='number of data loading workers', default=12)
-parser.add_argument('--nepoch', type=int, default=420, help='number of epochs to train for')
-parser.add_argument('--model', type=str, default='./log/pretrain/network.pth', help='optional reload model path')
+parser.add_argument('--nepoch', type=int, default=200, help='number of epochs to train for')
+parser.add_argument('--model', type=str, default='', help='optional reload model path')
 parser.add_argument('--num_points', type=int, default=2500, help='number of points')
 parser.add_argument('--nb_primitives', type=int, default=1, help='number of primitives in the atlas')
 parser.add_argument('--super_points', type=int, default=2500,
@@ -84,14 +84,14 @@ for epoch in range(resume_epoch, opt.nepoch):
     train_loss.reset()
     network.train()
     # learning rate schedule
-    if epoch == 100:
+    if epoch == 50:
         optimizer = optim.Adam([
             {'params': network.pc_encoder.parameters()},
             {'params': network.decoder.parameters()}
         ], lr=lrate/10.0)
-    if epoch == 120:
+    if epoch == 60:
         optimizer = optim.Adam(network.encoder.parameters(), lr=lrate)
-    if epoch == 220:
+    if epoch == 110:
         optimizer = optim.Adam(network.encoder.parameters(), lr=lrate / 10.0)
 
     for i, data in enumerate(dataloader, 0):
@@ -102,7 +102,7 @@ for epoch in range(resume_epoch, opt.nepoch):
         # SUPER_RESOLUTION optionally reduce the size of the points fed to PointNet
         points = points[:, :, :opt.super_points].contiguous()
         # END SUPER RESOLUTION
-        if epoch >= 120:
+        if epoch >= 60:
             input = torch.cat([class_vec, shape_onehot_vec, pose_vec], dim = 1).float().cuda()
             pointsRec = network( input , mode='param')
         else:
@@ -146,8 +146,9 @@ for epoch in range(resume_epoch, opt.nepoch):
             # SUPER_RESOLUTION
             points = points[:, :, :opt.super_points].contiguous()
             # END SUPER RESOLUTION
-            if epoch >= 120:
-                pointsRec = network(class_vec, shape_onehot_vec, pose_vec, mode='param')
+            if epoch >= 60:
+                input = torch.cat([class_vec, shape_onehot_vec, pose_vec], dim = 1).float().cuda()
+                pointsRec = network(input, mode='param')
             else:
                 pointsRec = network(points)  # forward pass
             dist1, dist2,_,_ = distChamfer(points.transpose(2, 1).contiguous(), pointsRec)

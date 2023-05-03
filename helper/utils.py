@@ -103,13 +103,10 @@ def get_boundary(faces):
 
 
 def samples_random(faces_cuda, pointsRec, sampled_number):
-
     if len(faces_cuda.size())==2:
-        faces_points = pointsRec.index_select(1, faces_cuda.view(-1)).contiguous().\
-            view(pointsRec.size()[0], faces_cuda.size()[0], faces_cuda.size()[1], pointsRec.size()[2])
+        faces_points = pointsRec.index_select(1, faces_cuda.reshape(-1)).contiguous().view(pointsRec.size()[0], faces_cuda.size()[0], faces_cuda.size()[1], pointsRec.size()[2])
     elif len(faces_cuda.size())==3:
-        faces_points = pointsRec.index_select(1, faces_cuda.view(-1)).contiguous().\
-            view(pointsRec.size()[0] ** 2, faces_cuda.size()[1], faces_cuda.size()[2], pointsRec.size()[2])
+        faces_points = pointsRec.index_select(1, faces_cuda.reshape(-1)).contiguous().view(pointsRec.size()[0] ** 2, faces_cuda.size()[1], faces_cuda.size()[2], pointsRec.size()[2])
         index = (torch.arange(0, pointsRec.size()[0]) * (pointsRec.size()[0] + 1)).\
             type(torch.cuda.LongTensor)
         faces_points = faces_points.index_select(0,index)

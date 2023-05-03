@@ -140,10 +140,16 @@ class Estimator(nn.Module):
 
 
 class SVR_TMNet(nn.Module):
-    def __init__(self,  bottleneck_size = 1024):
+    def __init__(self,  bottleneck_size = 1024,class_dim =1, shape_dim = 6778 , pose_dim = 3):
         super(SVR_TMNet, self).__init__()
         self.bottleneck_size = bottleneck_size
-        self.encoder = resnet.resnet18(num_classes=self.bottleneck_size)
+        self.class_dim = class_dim
+        self.shape_dim = shape_dim
+        self.pose_dim = pose_dim
+        self.encoder = EmbeddingNet(class_dim = self.class_dim, 
+                        shape_dim = self.shape_dim,
+                        pose_dim = self.pose_dim,
+                        output_dim=self.bottleneck_size)
         self.decoder = nn.ModuleList([DeformNet(bottleneck_size=3 + self.bottleneck_size)])
         self.decoder2 = nn.ModuleList([DeformNet(bottleneck_size=3 + self.bottleneck_size)])
         self.estimate = Estimator(bottleneck_size=3 + self.bottleneck_size)
@@ -151,7 +157,7 @@ class SVR_TMNet(nn.Module):
         self.refine = Refiner(bottleneck_size=3 + self.bottleneck_size)
 
     def forward(self,x,points,vector1=0,vector2=0,mode='deform1'):
-        x = x[:,:3,:,:].contiguous()
+        
         x = self.encoder(x)
         if points.size(1) != 3:
             points = points.transpose(2,1)
@@ -177,7 +183,7 @@ class SVR_TMNet(nn.Module):
 
 
 class Pretrain(nn.Module):
-    def __init__(self,  bottleneck_size = 1024,num_points=2500, class_dim =1, shape_dim = 5422 , pose_dim = 3):
+    def __init__(self,  bottleneck_size = 1024,num_points=2500, class_dim =1, shape_dim = 6778 , pose_dim = 3):
         super(Pretrain, self).__init__()
         self.bottleneck_size = bottleneck_size
         self.num_points = num_points
@@ -229,7 +235,7 @@ class BasicEmbedding(nn.Module):
 
 class EmbeddingNet(nn.Module):
 
-    def __init__(self, class_dim = 1, shape_dim = 5422, pose_dim = 3, output_dim = 1024):
+    def __init__(self, class_dim = 1, shape_dim = 6778, pose_dim = 3, output_dim = 1024):
         super(EmbeddingNet, self).__init__()
         self.class_embedding = BasicEmbedding( class_dim, output_dim)
         self.shape_embedding = BasicEmbedding( shape_dim, output_dim)
@@ -238,7 +244,7 @@ class EmbeddingNet(nn.Module):
         self.bn              = torch.nn.BatchNorm1d(output_dim)
 
     def forward(self, x ): 
-        class_vec, shape_vec, pose_vec = x[:,0].unsqueeze(1), x[:,1:5422],  x[:,5423:]
+        class_vec, shape_vec, pose_vec = x[:,0].unsqueeze(1), x[:,1:6779],  x[:,6779:]
         class_embed = self.class_embedding(class_vec)
         shape_embed = self.shape_embedding(shape_vec)
         pose_embed  = self.pose_embedding(pose_vec)
@@ -249,11 +255,15 @@ class EmbeddingNet(nn.Module):
 
 if __name__ =="__main__":
     
-    batch = 1
+    batch = 3
     class_vec = torch.randn(batch,1).cuda()
-    shape_vec = torch.randn(batch,1000).cuda()
+    shape_vec = torch.randn(batch,6778).cuda()
     pose_vec  = torch.randn(batch,3).cuda()
-    embed_net = EmbeddingNet(1, 1000, 3, 1024).cuda()
-    embed_net.eval()
-    feature_vec = embed_net(class_vec, shape_vec, pose_vec) 
+    svr_tmnet  = SVR_TMNet( bottleneck_size = 1024, class_dim = 1,  shape_dim = 6778 , pose_dim = 3).cuda()
+    svr_tmnet.eval()
+    input = torch.cat([class_vec, shape_vec, pose_vec], dim = 1).float().cuda() 
+    points = torch.randn(batch, 30000, 3).cuda()
+    points = points.transpose(2, 1).contiguous()
+    normals = torch.randn(batch, 10000, 3).cuda()    
+    feature_vec = svr_tmnet(input, points,mode='deform1') 
     

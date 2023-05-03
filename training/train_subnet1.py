@@ -5,9 +5,9 @@ import numpy as np
 import torch
 import torch.optim as optim
 import sys
-sys.path.append('./auxiliary/')
+sys.path.append('./helper/')
 from dataset import *
-from model import *
+from models import *
 from utils import *
 from ply import *
 import os
@@ -35,6 +35,7 @@ parser.add_argument('--lambda_smooth', type=float, default=5e-7, help='weight of
 parser.add_argument('--lambda_normal', type=float, default=1e-3, help='weight of normal loss')
 parser.add_argument('--pool', type=str, default='max', help='max or mean or sum')
 parser.add_argument('--manualSeed', type=int, default=6185)
+parser.add_argument('--resume_epoch', type=int, default = 0)
 opt = parser.parse_args()
 print(opt)
 
@@ -43,9 +44,10 @@ import dist_chamfer as ext
 distChamfer = ext.chamferDist()
 
 server = 'http://localhost/'
-vis = visdom.Visdom(server=server, port=8888, env=opt.env, use_incoming_socket=False)
+vis = visdom.Visdom(server=server, port=8097, env=opt.env, use_incoming_socket=False)
 now = datetime.datetime.now()
 save_path = opt.env
+resume_epoch = opt.resume_epoch
 dir_name = os.path.join('./log', save_path)
 if not os.path.exists(dir_name):
     os.mkdir(dir_name)
@@ -55,10 +57,10 @@ print("Random Seed: ", opt.manualSeed)
 random.seed(opt.manualSeed)
 torch.manual_seed(opt.manualSeed)
 
-dataset = ShapeNet(npoints=opt.num_points, SVR=True, normal=True, train=True, class_choice='chair')
+dataset = ShapeNet(npoints=opt.num_points, normal=True, train=True, class_choice='chair')
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batchSize,
                                          shuffle=True, num_workers=int(opt.workers))
-dataset_test = ShapeNet(npoints=opt.num_points, SVR=True, normal=True, train=False, class_choice='chair')
+dataset_test = ShapeNet(npoints=opt.num_points, normal=True, train=False, class_choice='chair')
 dataloader_test = torch.utils.data.DataLoader(dataset_test, batch_size=opt.batchSize,
                                               shuffle=False, num_workers=int(opt.workers))
 print('training set', len(dataset.datapath))
@@ -66,13 +68,14 @@ print('testing set', len(dataset_test.datapath))
 len_dataset = len(dataset)
 
 name = 'sphere' + str(opt.num_vertices) + '.mat'
-mesh = sio.loadmat('./data/' + name)
+mesh = sio.loadmat('./extras/' + name)
 faces = np.array(mesh['f'])
 faces_cuda = torch.from_numpy(faces.astype(int)).type(torch.cuda.LongTensor)
 vertices_sphere = np.array(mesh['v'])
 vertices_sphere = (torch.cuda.FloatTensor(vertices_sphere)).transpose(0, 1).contiguous()
 vertices_sphere = vertices_sphere.contiguous().unsqueeze(0)
 edge_cuda = get_edges(faces)
+# FIXME uncomment after the fix
 parameters = smoothness_loss_parameters(faces)
 
 network = SVR_TMNet()
@@ -113,7 +116,7 @@ train_CDs_curve = []
 val_CDs_curve = []
 
 
-for epoch in range(opt.nepoch):
+for epoch in range(resume_epoch,opt.nepoch):
     # TRAIN MODE
     train_CD_loss.reset()
     train_CDs_loss.reset()
@@ -136,22 +139,22 @@ for epoch in range(opt.nepoch):
 
     for i, data in enumerate(dataloader, 0):
         optimizer.zero_grad()
-        img, points, normals, name, cat = data
-        img = img.cuda()
+        class_vec, shape_onehot_vec, pose_vec, points, normals, name, cat = data
+        input = torch.cat([class_vec, shape_onehot_vec, pose_vec], dim = 1).float().cuda()
         points = points.cuda()
         normals = normals.cuda()
         choice = np.random.choice(points.size(1), opt.num_vertices, replace=False)
         points_choice = points[:, choice, :].contiguous()
-        vertices_input = (vertices_sphere.expand(img.size(0), vertices_sphere.size(1),
+        length = input.size(0)
+        vertices_input = (vertices_sphere.expand(length, vertices_sphere.size(1),
                                                  vertices_sphere.size(2)).contiguous())
-        pointsRec = network(img, vertices_input, mode='deform1')  # vertices_sphere 3*2562
+        pointsRec = network(input, vertices_input, mode='deform1')  # vertices_sphere 3*2562
         dist1, dist2, _, idx2 = distChamfer(points_choice, pointsRec)
-
         pointsRec_samples, _ = samples_random(faces_cuda, pointsRec.detach(), opt.num_points)
         dist1_samples, dist2_samples, _, _ = distChamfer(points, pointsRec_samples.detach())
         choice2 = np.random.choice(points.size(1), opt.num_samples, replace=False)
         error_GT = torch.sqrt(dist2_samples.detach()[:,choice2])
-        error = network(img, pointsRec_samples.detach()[:,choice2].transpose(1, 2), mode='estimate')
+        error = network(input, pointsRec_samples.detach()[:,choice2].transpose(1, 2), mode='estimate')
 
         CD_loss = torch.mean(dist1) + torch.mean(dist2)
         CDs_loss = torch.mean(dist1_samples) + torch.mean(dist2_samples)
@@ -172,7 +175,6 @@ for epoch in range(opt.nepoch):
 
         # VIZUALIZE
         if i % 50 <= 0:
-            vis.image(img[0].data.cpu().contiguous(), win='INPUT IMAGE TRAIN', opts=dict(title="INPUT IMAGE TRAIN"))
             vis.scatter(X=points[0].data.cpu(),
                         win='TRAIN_INPUT',
                         opts=dict(
@@ -203,21 +205,22 @@ for epoch in range(opt.nepoch):
 
         network.eval()
         for i, data in enumerate(dataloader_test, 0):
-            img, points, normals, name, cat = data
-            img = img.cuda()
+            class_vec, shape_onehot_vec, pose_vec, points, normals, name, cat = data
+            input = torch.cat([class_vec, shape_onehot_vec, pose_vec], dim = 1).float().cuda()
+            length = input.size(0)
             points = points.cuda()
             normals = normals.cuda()
             choice = np.random.choice(points.size(1), opt.num_vertices, replace=False)
             points_choice = points[:, choice, :].contiguous()
-            vertices_input = (vertices_sphere.expand(img.size(0), vertices_sphere.size(1),
+            vertices_input = (vertices_sphere.expand(length, vertices_sphere.size(1),
                                                      vertices_sphere.size(2)).contiguous())
-            pointsRec = network(img, vertices_input, mode='deform1')  # points_sphere 3*2562
+            pointsRec = network(input, vertices_input, mode='deform1')  # points_sphere 3*2562
             dist1, dist2, _, idx2 = distChamfer(points_choice, pointsRec)
 
             pointsRec_samples, index = samples_random(faces_cuda, pointsRec.detach(), opt.num_points)
             dist1_samples, dist2_samples, _, _ = distChamfer(points, pointsRec_samples)
             error_GT = torch.sqrt(dist2_samples)
-            error = network(img, pointsRec_samples.detach().transpose(1, 2), mode='estimate')
+            error = network(input, pointsRec_samples.detach().transpose(1, 2), mode='estimate')
 
             CD_loss = torch.mean(dist1) + torch.mean(dist2)
             edge_loss = get_edge_loss_stage1(pointsRec, edge_cuda.detach())
@@ -233,7 +236,6 @@ for epoch in range(opt.nepoch):
             val_CDs_loss.update(CDs_loss.item())
 
             if i % 25 == 0:
-                vis.image(img[0].data.cpu().contiguous(), win='INPUT IMAGE VAL', opts=dict(title="INPUT IMAGE TRAIN"))
                 vis.scatter(X=points[0].data.cpu(),
                             win='VAL_INPUT',
                             opts=dict(
