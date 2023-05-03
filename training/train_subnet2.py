@@ -5,9 +5,9 @@ import numpy as np
 import torch
 import torch.optim as optim
 import sys
-sys.path.append('./auxiliary/')
+sys.path.append('./helper/')
 from dataset import *
-from model import *
+from models import *
 from utils import *
 from ply import *
 import os
@@ -35,6 +35,8 @@ parser.add_argument('--lambda_edge', type=float, default=0.05)
 parser.add_argument('--lambda_smooth', type=float, default=2e-7)
 parser.add_argument('--pool',type=str,default='max',help='max or mean or sum' )
 parser.add_argument('--manualSeed',type=int,default=6185)
+parser.add_argument('--resume_epoch', type=int, default = 0)
+
 opt = parser.parse_args()
 print(opt)
 
@@ -43,7 +45,7 @@ import dist_chamfer as ext
 distChamfer = ext.chamferDist()
 
 server = 'http://localhost/'
-vis = visdom.Visdom(server=server, port=8888, env=opt.env, use_incoming_socket=False)
+vis = visdom.Visdom(server=server, port=8097, env=opt.env, use_incoming_socket=False)
 now = datetime.datetime.now()
 save_path = opt.env
 dir_name = os.path.join('./log', save_path)
@@ -55,10 +57,10 @@ print("Random Seed: ", opt.manualSeed)
 random.seed(opt.manualSeed)
 torch.manual_seed(opt.manualSeed)
 
-dataset = ShapeNet(npoints=opt.num_points, SVR=True, normal=True, train=True,class_choice='chair')
+dataset = ShapeNet(npoints=opt.num_points, normal=True, train=True,class_choice='chair')
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batchSize,
                                          shuffle=True, num_workers=int(opt.workers))
-dataset_test = ShapeNet(npoints=opt.num_points, SVR=True, normal=True, train=False,class_choice='chair')
+dataset_test = ShapeNet(npoints=opt.num_points, normal=True, train=False,class_choice='chair')
 dataloader_test = torch.utils.data.DataLoader(dataset_test, batch_size=opt.batchSize,
                                          shuffle=False, num_workers=int(opt.workers))
 print('training set', len(dataset.datapath))
@@ -66,7 +68,7 @@ print('testing set', len(dataset_test.datapath))
 len_dataset = len(dataset)
 
 name = 'sphere' + str(opt.num_vertices) + '.mat'
-mesh = sio.loadmat('./data/' + name)
+mesh = sio.loadmat('./extras/' + name)
 faces = np.array(mesh['f'])
 faces_cuda = torch.from_numpy(faces.astype(int)).type(torch.cuda.LongTensor)
 vertices_sphere = np.array(mesh['v'])
@@ -124,30 +126,31 @@ for epoch in range(opt.nepoch):
 
     for i, data in enumerate(dataloader, 0):
         optimizer.zero_grad()
-        img, points, normals, name, cat = data
-        img = img.cuda()
+        class_vec, shape_onehot_vec, pose_vec, points, normals, name, cat = data
+        input = torch.cat([class_vec, shape_onehot_vec, pose_vec], dim = 1).float().cuda()
         points = points.cuda()
         normals = normals.cuda()
         choice = np.random.choice(points.size(1), opt.num_vertices, replace=False)
         points_choice = points[:, choice, :].contiguous()
-        vertices_input = (vertices_sphere.expand(img.size(0), vertices_sphere.size(1),
+        length = input.size(0)
+        vertices_input = (vertices_sphere.expand(length, vertices_sphere.size(1),
                                                  vertices_sphere.size(2)).contiguous())
 
         with torch.no_grad():
-            pointsRec = network(img, vertices_input, mode='deform1')
+            pointsRec = network(input, vertices_input, mode='deform1')
             pointsRec_samples, index = samples_random(faces_cuda, pointsRec.detach(), opt.num_points)
-            error_stage1 = network(img, pointsRec_samples.detach().transpose(1, 2), mode='estimate')
-            faces_cuda_bn = faces_cuda.unsqueeze(0).expand(img.size(0), faces_cuda.size(0), faces_cuda.size(1))
+            error_stage1 = network(input, pointsRec_samples.detach().transpose(1, 2), mode='estimate')
+            faces_cuda_bn = faces_cuda.unsqueeze(0).expand(length, faces_cuda.size(0), faces_cuda.size(1))
             faces_cuda_bn = prune(faces_cuda_bn.detach(), error_stage1.detach(), opt.tau, index, opt.pool)
 
-        pointsRec2 = network(img, pointsRec, mode='deform2')
+        pointsRec2 = network(input, pointsRec, mode='deform2')
         _, _, _, idx2 = distChamfer(points, pointsRec2)
 
         pointsRec2_samples, _ = samples_random(faces_cuda_bn.detach(), pointsRec2, opt.num_points)
         dist12_samples, dist22_samples, _, _ = distChamfer(points, pointsRec2_samples)
         choice2 = np.random.choice(points.size(1), opt.num_samples, replace=False)
         error_GT = torch.sqrt(dist22_samples.detach()[:,choice2])
-        error = network(img, pointsRec2_samples.detach()[:,choice2].transpose(1, 2), mode='estimate2')
+        error = network(input, pointsRec2_samples.detach()[:,choice2].transpose(1, 2), mode='estimate2')
 
         cds_stage2 = (torch.mean(dist12_samples)) + (torch.mean(dist22_samples))
         l2_loss = calculate_l2_loss(error, error_GT.detach())
@@ -165,7 +168,6 @@ for epoch in range(opt.nepoch):
 
         # VIZUALIZE
         if i % 50 <= 0:
-            vis.image(img[0].data.cpu().contiguous(), win='INPUT IMAGE TRAIN', opts=dict(title="INPUT IMAGE TRAIN"))
             vis.scatter(X=points_choice[0].data.cpu(),
                         win='TRAIN_INPUT',
                         opts=dict(
@@ -195,28 +197,30 @@ for epoch in range(opt.nepoch):
 
         network.eval()
         for i, data in enumerate(dataloader_test, 0):
-            img, points, normals, name, cat = data
-            img = img.cuda()
+            class_vec, shape_onehot_vec, pose_vec, points, normals, name, cat = data
+            input = torch.cat([class_vec, shape_onehot_vec, pose_vec], dim = 1).float().cuda()
             points = points.cuda()
             normals = normals.cuda()
             choice = np.random.choice(points.size(1), opt.num_vertices, replace=False)
             points_choice = points[:, choice, :].contiguous()
-            vertices_input = (vertices_sphere.expand(img.size(0), vertices_sphere.size(1),
+            length = input.size(0)
+        
+            vertices_input = (vertices_sphere.expand(length, vertices_sphere.size(1),
                                                      vertices_sphere.size(2)).contiguous())
 
-            pointsRec = network(img, vertices_input, mode='deform1')  # vertices_sphere 3*2562
+            pointsRec = network(input, vertices_input, mode='deform1')  # vertices_sphere 3*2562
             pointsRec_samples, index = samples_random(faces_cuda, pointsRec.detach(), opt.num_points)
-            error = network(img, pointsRec_samples.detach().transpose(1, 2), mode='estimate')
-            faces_cuda_bn = faces_cuda.unsqueeze(0).expand(img.size(0), faces_cuda.size(0), faces_cuda.size(1))
+            error = network(input, pointsRec_samples.detach().transpose(1, 2), mode='estimate')
+            faces_cuda_bn = faces_cuda.unsqueeze(0).expand(length, faces_cuda.size(0), faces_cuda.size(1))
             faces_cuda_bn = prune(faces_cuda_bn, error, opt.tau, index, opt.pool)
 
-            pointsRec2 = network(img, pointsRec, mode='deform2')
+            pointsRec2 = network(input, pointsRec, mode='deform2')
             _, _, _, idx2 = distChamfer(points, pointsRec2)
 
             pointsRec2_samples, index = samples_random(faces_cuda_bn, pointsRec2, opt.num_points)
             dist12_samples, dist22_samples, _, _ = distChamfer(points, pointsRec2_samples)
             error_GT = torch.sqrt(dist22_samples.detach())
-            error = network(img, pointsRec2_samples.detach().transpose(1, 2), mode='estimate2')
+            error = network(input, pointsRec2_samples.detach().transpose(1, 2), mode='estimate2')
 
             cds_stage2 = (torch.mean(dist12_samples)) + (torch.mean(dist22_samples))
             l2_loss = calculate_l2_loss(error, error_GT.detach())
@@ -229,7 +233,6 @@ for epoch in range(opt.nepoch):
             dataset_test.perCatValueMeter[cat[0]].update(cds_stage2.item())
 
             if i % 25 == 0:
-                vis.image(img[0].data.cpu().contiguous(), win='INPUT IMAGE VAL', opts=dict(title="INPUT IMAGE TRAIN"))
                 vis.scatter(X=points[0].data.cpu(),
                             win='VAL_INPUT',
                             opts=dict(
