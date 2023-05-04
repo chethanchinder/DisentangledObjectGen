@@ -36,7 +36,6 @@ blue = lambda x:'\033[94m' + x + '\033[0m'
 print("Random Seed: ", opt.manualSeed)
 random.seed(opt.manualSeed)
 torch.manual_seed(opt.manualSeed)
-batch_size = opt.batchSize
 dataset_test = ShapeNet(npoints=opt.num_points, normal=True, train=False,class_choice='chair')
 dataloader_test = torch.utils.data.DataLoader(dataset_test, batch_size=opt.batchSize,
                                          shuffle=False, num_workers=int(opt.workers))
@@ -73,7 +72,7 @@ with torch.no_grad():
         points = points.cuda()
         choice = np.random.choice(points.size(1), opt.num_vertices, replace=False)
         points_choice = points[:, choice, :].contiguous()
-        vertices_input = (vertices_sphere.expand(batch_size, vertices_sphere.size(1),
+        vertices_input = (vertices_sphere.expand(input.size()[0], vertices_sphere.size(1),
                                                  vertices_sphere.size(2)).contiguous())
         pointsRec  = network(input, vertices_input,mode='deform1')
         pointsRec_samples, index = samples_random(faces_cuda, pointsRec, opt.num_points)
@@ -111,7 +110,7 @@ with torch.no_grad():
                 pointsRec3_boundary = pointsRec2_boundary[:, :, 0]
 
             pointsRec3_set = []
-            for ibatch in torch.arange(0, batch_size):
+            for ibatch in torch.arange(0, input.size()[0]):
                 length = selected_pair_all_len[ibatch]
                 if length != 0:
                     # index_bp = boundary_points_all[ibatch][:length]
@@ -119,7 +118,7 @@ with torch.no_grad():
                     prb_final = pointsRec3_boundary[ibatch][:length]
                     pr = pointsRec2[ibatch]
                     index_bp = index_bp.view(index_bp.shape[0], -1).expand([index_bp.shape[0], 3])
-                    pr_final = pr.scatter(dim=0, index=index_bp, source=prb_final)
+                    pr_final = pr.scatter(dim=0, index=index_bp, src=prb_final)
                     pointsRec3_set.append(pr_final)
                 else:
                     pr = pointsRec2[ibatch]

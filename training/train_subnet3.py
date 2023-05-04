@@ -20,7 +20,7 @@ from loss import *
 parser = argparse.ArgumentParser()
 parser.add_argument('--batchSize', type=int, default=32, help='input batch size')
 parser.add_argument('--workers', type=int, help='number of data loading workers', default=12)
-parser.add_argument('--nepoch', type=int, default=60, help='number of epochs to train for')
+parser.add_argument('--nepoch', type=int, default=25, help='number of epochs to train for')
 parser.add_argument('--epoch_decay',type=int,default=100,help='epoch to decay lr')
 parser.add_argument('--model', type=str,default='./log/SVR_subnet2/network.pth',help='model path from the trained subnet2')
 parser.add_argument('--num_points', type=int, default=10000, help='number of points for GT point cloud')
@@ -55,7 +55,6 @@ blue = lambda x: '\033[94m' + x + '\033[0m'
 print("Random Seed: ", opt.manualSeed)
 random.seed(opt.manualSeed)
 torch.manual_seed(opt.manualSeed)
-batch_size = opt.batchSize
 dataset = ShapeNet(npoints=opt.num_points, normal=True,train=True,class_choice='chair')
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batchSize,
                                          shuffle=True, num_workers=int(opt.workers))
@@ -129,14 +128,14 @@ for epoch in range(opt.nepoch):
         
         choice = np.random.choice(points.size(1), opt.num_vertices, replace=False)
         points_choice = points[:, choice, :].contiguous()
-        vertices_input = (vertices_sphere.expand(batch_size, vertices_sphere.size(1),
+        vertices_input = (vertices_sphere.expand(input.size()[0], vertices_sphere.size(1),
                                                  vertices_sphere.size(2)).contiguous())
 
         with torch.no_grad():
             pointsRec = network(input, vertices_input,mode='deform1')
             pointsRec_samples, index = samples_random(faces_cuda, pointsRec.detach(), opt.num_points)
             error_stage1 = network(input, pointsRec_samples.detach().transpose(1, 2),mode='estimate')
-            faces_cuda_bn = faces_cuda.unsqueeze(0).expand(batch_size, faces_cuda.size(0), faces_cuda.size(1))
+            faces_cuda_bn = faces_cuda.unsqueeze(0).expand(input.size()[0], faces_cuda.size(0), faces_cuda.size(1))
             faces_cuda_bn = prune(faces_cuda_bn.detach(), error_stage1.detach(), opt.tau, index, opt.pool)
 
             pointsRec2 = network(input, pointsRec, mode='deform2')
@@ -165,14 +164,14 @@ for epoch in range(opt.nepoch):
 
         # get the final refined mesh and cd loss
         pointsRec3_set = []
-        for ibatch in torch.arange(0, batch_size):
+        for ibatch in torch.arange(0, input.size()[0]):
             length = selected_pair_all_len[ibatch]
             if length != 0:
                 index_bp = selected_pair_all[ibatch][:, 0][:length]
                 prb_final = pointsRec3_boundary[ibatch][:length]
                 pr = pointsRec2[ibatch]
                 index_bp = index_bp.view(index_bp.shape[0], -1).expand([index_bp.shape[0], 3])
-                pr_final = pr.scatter(dim=0, index=index_bp, source=prb_final)
+                pr_final = pr.scatter(dim=0, index=index_bp, src =prb_final)
                 pointsRec3_set.append(pr_final)
             else:
                 pr = pointsRec2[ibatch]
@@ -242,12 +241,12 @@ for epoch in range(opt.nepoch):
             normals = normals.cuda()
             choice = np.random.choice(points.size(1), opt.num_vertices, replace=False)
             points_choice = points[:, choice, :].contiguous()
-            vertices_input = (vertices_sphere.expand(batch_size, vertices_sphere.size(1),
+            vertices_input = (vertices_sphere.expand(input.size()[0], vertices_sphere.size(1),
                                                      vertices_sphere.size(2)).contiguous())
             pointsRec = network(input, vertices_input,mode='deform1')  # vertices_sphere 3*2562
             pointsRec_samples, index = samples_random(faces_cuda, pointsRec.detach(), opt.num_points)
             error = network(input, pointsRec_samples.detach().transpose(1, 2),mode='estimate')
-            faces_cuda_bn = faces_cuda.unsqueeze(0).expand(batch_size, faces_cuda.size(0), faces_cuda.size(1))
+            faces_cuda_bn = faces_cuda.unsqueeze(0).expand(input.size()[0], faces_cuda.size(0), faces_cuda.size(1))
             faces_cuda_bn = prune(faces_cuda_bn, error, opt.tau, index, opt.pool)
 
             pointsRec2 = network(input, pointsRec, mode='deform2')
@@ -278,14 +277,14 @@ for epoch in range(opt.nepoch):
 
             # get the final refined mesh and cd loss
             pointsRec3_set = []
-            for ibatch in torch.arange(0, batch_size):
+            for ibatch in torch.arange(0, input.size()[0]):
                 length = selected_pair_all_len[ibatch]
                 if length != 0:
                     index_bp = selected_pair_all[ibatch][:, 0][:length]
                     prb_final = pointsRec3_boundary[ibatch][:length]
                     pr = pointsRec2[ibatch]
                     index_bp = index_bp.view(index_bp.shape[0], -1).expand([index_bp.shape[0], 3])
-                    pr_final = pr.scatter(dim=0, index=index_bp, source=prb_final)
+                    pr_final = pr.scatter(dim=0, index=index_bp, src=prb_final)
                     pointsRec3_set.append(pr_final)
                 else:
                     pr = pointsRec2[ibatch]
