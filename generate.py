@@ -4,9 +4,9 @@ import random
 import numpy as np
 import torch
 import sys
-sys.path.append('./auxiliary/')
+sys.path.append('./helper/')
 from dataset import *
-from model import *
+from models import *
 from utils import *
 from ply import *
 import os
@@ -17,7 +17,7 @@ from loss import *
 parser = argparse.ArgumentParser()
 parser.add_argument('--batchSize', type=int, default=1, help='input batch size')
 parser.add_argument('--workers', type=int, help='number of data loading workers', default=6)
-parser.add_argument('--model', type=str, default = '',  help='your path to the trained model')
+parser.add_argument('--model', type=str, default = './log/SVR_subnet3/network.pth',  help='your path to the trained model')
 parser.add_argument('--num_points',type=int,default=10000)
 parser.add_argument('--tau',type=float,default=0.1)
 parser.add_argument('--tau_decay',type=float,default=2)
@@ -36,14 +36,14 @@ blue = lambda x:'\033[94m' + x + '\033[0m'
 print("Random Seed: ", opt.manualSeed)
 random.seed(opt.manualSeed)
 torch.manual_seed(opt.manualSeed)
-dataset_test = ShapeNet(npoints=opt.num_points, normal=True, train=False,class_choice='chair')
+dataset_test = ShapeNet(npoints=opt.num_points, normal=True, train=True,class_choice='chair')
 dataloader_test = torch.utils.data.DataLoader(dataset_test, batch_size=opt.batchSize,
                                          shuffle=False, num_workers=int(opt.workers))
 print('testing set', len(dataset_test.datapath))
 len_dataset = len(dataset_test)
 
 name = 'sphere' + str(opt.num_vertices) + '.mat'
-a = sio.loadmat('./data/' + name)
+a = sio.loadmat('./extras/' + name)
 faces = np.array(a['f'])
 faces_cuda = torch.from_numpy(faces.astype(int)).type(torch.cuda.LongTensor)
 vertices_sphere = np.array(a['v'])

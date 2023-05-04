@@ -46,10 +46,10 @@ print("Random Seed: ", opt.manualSeed)
 random.seed(opt.manualSeed)
 torch.manual_seed(opt.manualSeed)
 resume_epoch = opt.resume_epoch
-dataset = ShapeNet(npoints=opt.num_points, normal=False, train=True, class_choice='chair')
+dataset = ShapeNet(npoints=opt.num_points, normal=False, train=True, class_choice=['chair', 'desk'])
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batchSize,
                                          shuffle=True, num_workers=int(opt.workers))
-dataset_test = ShapeNet(npoints=opt.num_points, normal=False, train=False, class_choice='chair')
+dataset_test = ShapeNet(npoints=opt.num_points, normal=False, train=False, class_choice=['chair', 'desk'])
 dataloader_test = torch.utils.data.DataLoader(dataset_test, batch_size=opt.batchSize,
                                               shuffle=False, num_workers=int(opt.workers))
 
@@ -98,7 +98,7 @@ for epoch in range(resume_epoch, opt.nepoch):
         optimizer.zero_grad()
         class_vec, shape_onehot_vec, pose_vec, points, normals, name, cat = data
         points = points.transpose(2, 1).contiguous()
-        points = points.cuda()
+        points = points.float().cuda()
         # SUPER_RESOLUTION optionally reduce the size of the points fed to PointNet
         points = points[:, :, :opt.super_points].contiguous()
         # END SUPER RESOLUTION
@@ -142,7 +142,7 @@ for epoch in range(resume_epoch, opt.nepoch):
         for i, data in enumerate(dataloader_test, 0):
             class_vec, shape_onehot_vec, pose_vec, points, normals, name, cat = data
             points = points.transpose(2, 1).contiguous()
-            points = points.cuda()
+            points = points.float().cuda()
             # SUPER_RESOLUTION
             points = points[:, :, :opt.super_points].contiguous()
             # END SUPER RESOLUTION

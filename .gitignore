@@ -3,3 +3,5 @@ extension/chamfer.egg-info/
 extension/dist/
 __pycache__
 log/
+log*/
+*.txt

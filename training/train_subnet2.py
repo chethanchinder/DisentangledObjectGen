@@ -57,10 +57,10 @@ print("Random Seed: ", opt.manualSeed)
 random.seed(opt.manualSeed)
 torch.manual_seed(opt.manualSeed)
 
-dataset = ShapeNet(npoints=opt.num_points, normal=True, train=True,class_choice='chair')
+dataset = ShapeNet(npoints=opt.num_points, normal=True, train=True,class_choice=['chair', 'desk'])
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batchSize,
                                          shuffle=True, num_workers=int(opt.workers))
-dataset_test = ShapeNet(npoints=opt.num_points, normal=True, train=False,class_choice='chair')
+dataset_test = ShapeNet(npoints=opt.num_points, normal=True, train=False,class_choice=['chair', 'desk'])
 dataloader_test = torch.utils.data.DataLoader(dataset_test, batch_size=opt.batchSize,
                                          shuffle=False, num_workers=int(opt.workers))
 print('training set', len(dataset.datapath))
@@ -128,8 +128,8 @@ for epoch in range(opt.nepoch):
         optimizer.zero_grad()
         class_vec, shape_onehot_vec, pose_vec, points, normals, name, cat = data
         input = torch.cat([class_vec, shape_onehot_vec, pose_vec], dim = 1).float().cuda()
-        points = points.cuda()
-        normals = normals.cuda()
+        points = points.float().cuda()
+        normals = normals.float().cuda()
         choice = np.random.choice(points.size(1), opt.num_vertices, replace=False)
         points_choice = points[:, choice, :].contiguous()
         length = input.size(0)
@@ -199,8 +199,8 @@ for epoch in range(opt.nepoch):
         for i, data in enumerate(dataloader_test, 0):
             class_vec, shape_onehot_vec, pose_vec, points, normals, name, cat = data
             input = torch.cat([class_vec, shape_onehot_vec, pose_vec], dim = 1).float().cuda()
-            points = points.cuda()
-            normals = normals.cuda()
+            points = points.float().cuda()
+            normals = normals.float().cuda()
             choice = np.random.choice(points.size(1), opt.num_vertices, replace=False)
             points_choice = points[:, choice, :].contiguous()
             length = input.size(0)

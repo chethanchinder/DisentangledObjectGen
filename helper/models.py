@@ -140,7 +140,7 @@ class Estimator(nn.Module):
 
 
 class SVR_TMNet(nn.Module):
-    def __init__(self,  bottleneck_size = 1024,class_dim =1, shape_dim = 6778 , pose_dim = 3):
+    def __init__(self,  bottleneck_size = 1024,class_dim =1, shape_dim = 5000 , pose_dim = 3):
         super(SVR_TMNet, self).__init__()
         self.bottleneck_size = bottleneck_size
         self.class_dim = class_dim
@@ -183,7 +183,7 @@ class SVR_TMNet(nn.Module):
 
 
 class Pretrain(nn.Module):
-    def __init__(self,  bottleneck_size = 1024,num_points=2500, class_dim =1, shape_dim = 6778 , pose_dim = 3):
+    def __init__(self,  bottleneck_size = 1024,num_points=2500, class_dim =1, shape_dim = 5000 , pose_dim = 3):
         super(Pretrain, self).__init__()
         self.bottleneck_size = bottleneck_size
         self.num_points = num_points
@@ -235,7 +235,7 @@ class BasicEmbedding(nn.Module):
 
 class EmbeddingNet(nn.Module):
 
-    def __init__(self, class_dim = 1, shape_dim = 6778, pose_dim = 3, output_dim = 1024):
+    def __init__(self, class_dim = 1, shape_dim = 5000, pose_dim = 3, output_dim = 1024):
         super(EmbeddingNet, self).__init__()
         self.class_embedding = BasicEmbedding( class_dim, output_dim)
         self.shape_embedding = BasicEmbedding( shape_dim, output_dim)
@@ -244,7 +244,7 @@ class EmbeddingNet(nn.Module):
         self.bn              = torch.nn.BatchNorm1d(output_dim)
 
     def forward(self, x ): 
-        class_vec, shape_vec, pose_vec = x[:,0].unsqueeze(1), x[:,1:6779],  x[:,6779:]
+        class_vec, shape_vec, pose_vec = x[:,0].unsqueeze(1), x[:,1:5001],  x[:,5001:]
         class_embed = self.class_embedding(class_vec)
         shape_embed = self.shape_embedding(shape_vec)
         pose_embed  = self.pose_embedding(pose_vec)
@@ -257,9 +257,9 @@ if __name__ =="__main__":
     
     batch = 3
     class_vec = torch.randn(batch,1).cuda()
-    shape_vec = torch.randn(batch,6778).cuda()
+    shape_vec = torch.randn(batch,5000).cuda()
     pose_vec  = torch.randn(batch,3).cuda()
-    svr_tmnet  = SVR_TMNet( bottleneck_size = 1024, class_dim = 1,  shape_dim = 6778 , pose_dim = 3).cuda()
+    svr_tmnet  = SVR_TMNet( bottleneck_size = 1024, class_dim = 1,  shape_dim = 5000 , pose_dim = 3).cuda()
     svr_tmnet.eval()
     input = torch.cat([class_vec, shape_vec, pose_vec], dim = 1).float().cuda() 
     points = torch.randn(batch, 30000, 3).cuda()

@@ -20,7 +20,7 @@ from loss import *
 parser = argparse.ArgumentParser()
 parser.add_argument('--batchSize', type=int, default=32, help='input batch size')
 parser.add_argument('--workers', type=int, help='number of data loading workers', default=12)
-parser.add_argument('--nepoch', type=int, default=420, help='number of epochs to train for')
+parser.add_argument('--nepoch', type=int, default=200, help='number of epochs to train for')
 parser.add_argument('--epoch_decay', type=int, default=300, help='epoch to decay lr')
 parser.add_argument('--epoch_decay2', type=int, default=400, help='epoch to decay lr for the second time')
 parser.add_argument('--model', type=str, default='./log/pretrain/network.pth', help='model path from the pretrained model')
@@ -57,10 +57,10 @@ print("Random Seed: ", opt.manualSeed)
 random.seed(opt.manualSeed)
 torch.manual_seed(opt.manualSeed)
 
-dataset = ShapeNet(npoints=opt.num_points, normal=True, train=True, class_choice='chair')
+dataset = ShapeNet(npoints=opt.num_points, normal=True, train=True, class_choice=['chair', 'desk'])
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batchSize,
                                          shuffle=True, num_workers=int(opt.workers))
-dataset_test = ShapeNet(npoints=opt.num_points, normal=True, train=False, class_choice='chair')
+dataset_test = ShapeNet(npoints=opt.num_points, normal=True, train=False, class_choice=['chair', 'desk'])
 dataloader_test = torch.utils.data.DataLoader(dataset_test, batch_size=opt.batchSize,
                                               shuffle=False, num_workers=int(opt.workers))
 print('training set', len(dataset.datapath))
@@ -141,8 +141,8 @@ for epoch in range(resume_epoch,opt.nepoch):
         optimizer.zero_grad()
         class_vec, shape_onehot_vec, pose_vec, points, normals, name, cat = data
         input = torch.cat([class_vec, shape_onehot_vec, pose_vec], dim = 1).float().cuda()
-        points = points.cuda()
-        normals = normals.cuda()
+        points = points.float().cuda()
+        normals = normals.float().cuda()
         choice = np.random.choice(points.size(1), opt.num_vertices, replace=False)
         points_choice = points[:, choice, :].contiguous()
         length = input.size(0)
@@ -208,8 +208,8 @@ for epoch in range(resume_epoch,opt.nepoch):
             class_vec, shape_onehot_vec, pose_vec, points, normals, name, cat = data
             input = torch.cat([class_vec, shape_onehot_vec, pose_vec], dim = 1).float().cuda()
             length = input.size(0)
-            points = points.cuda()
-            normals = normals.cuda()
+            points = points.float().cuda()
+            normals = normals.float().cuda()
             choice = np.random.choice(points.size(1), opt.num_vertices, replace=False)
             points_choice = points[:, choice, :].contiguous()
             vertices_input = (vertices_sphere.expand(length, vertices_sphere.size(1),

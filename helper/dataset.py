@@ -11,6 +11,7 @@ from utils import *
 import scipy.io as sio
 import time
 import glob
+import json
 from numpy import argmax
 from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import OneHotEncoder
@@ -18,7 +19,7 @@ from sklearn.preprocessing import OneHotEncoder
 
 class ShapeNet(data.Dataset):
     def __init__(self,
-                 objectfile="/home/chethanc/reconstruction/data/customShapeNet_mat",
+                 objectfile="/home/chethanc/reconstruction/data/mini_shapenet_mat",
                  class_choice = "chair",
                  train = True, npoints = 2500, normal = False,
                  idx=0, extension = 'png'):
@@ -39,7 +40,7 @@ class ShapeNet(data.Dataset):
         if not class_choice is  None:
             self.cat = {k:v for k,v in self.cat.items() if k in class_choice}
         print(self.cat)
-        for item in self.cat:
+        for object_id,item in enumerate(self.cat):
             try:
                 dir_point = os.path.join(self.objectfile, self.cat[item])
                 fns_pc = sorted(os.listdir(dir_point))
@@ -74,7 +75,7 @@ class ShapeNet(data.Dataset):
                 for fn in fns:
                     shape_onehot_int = label_encoder.transform([fn])
                     shape_onehot_vec = onehot_encoder.transform([shape_onehot_int]).squeeze()
-                    class_vec = np.array([1])
+                    class_vec = np.array([object_id])
                     pose_vec =  np.array([0, 0, 0])
                     self.meta[item].append((class_vec, shape_onehot_vec,
                                     pose_vec,os.path.join(dir_point, fn+'.mat'),
@@ -134,7 +135,6 @@ if __name__  == '__main__':
         class_vec, shape_onehot_vec, pose_vec,points, normals, name, cat = data
         print("input shapes ", class_vec.shape, shape_onehot_vec.shape, pose_vec.shape)
         print("points shape ",points.shape,normals.shape)
-        exit()
         #print(cat[0],name[0],points.max(),points.min())
     time2 = time.time()
     print(time2-time1)
