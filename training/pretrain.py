@@ -46,12 +46,12 @@ print("Random Seed: ", opt.manualSeed)
 random.seed(opt.manualSeed)
 torch.manual_seed(opt.manualSeed)
 resume_epoch = opt.resume_epoch
-dataset = ShapeNet(npoints=opt.num_points, normal=False, train=True, class_choice=['chair', 'desk'])
+dataset = ShapeNet(npoints=opt.num_points, normal=False, train=True, class_choice=['chair', 'table'])
 dataloader = torch.utils.data.DataLoader(dataset, batch_size=opt.batchSize,
                                          shuffle=True, num_workers=int(opt.workers))
-dataset_test = ShapeNet(npoints=opt.num_points, normal=False, train=False, class_choice=['chair', 'desk'])
+dataset_test = ShapeNet(npoints=opt.num_points, normal=False, train=False, class_choice=['chair', 'table'])
 dataloader_test = torch.utils.data.DataLoader(dataset_test, batch_size=opt.batchSize,
-                                              shuffle=False, num_workers=int(opt.workers))
+                                              shuffle=True, num_workers=int(opt.workers))
 
 print('training set', len(dataset.datapath))
 print('testing set', len(dataset_test.datapath))
