@@ -36,7 +36,7 @@ blue = lambda x:'\033[94m' + x + '\033[0m'
 print("Random Seed: ", opt.manualSeed)
 random.seed(opt.manualSeed)
 torch.manual_seed(opt.manualSeed)
-dataset_test = ShapeNet(npoints=opt.num_points, normal=True, train=True,class_choice='chair')
+dataset_test = ShapeNet(npoints=opt.num_points, normal=True, train=False,class_choice=['chair','table'])
 dataloader_test = torch.utils.data.DataLoader(dataset_test, batch_size=opt.batchSize,
                                          shuffle=False, num_workers=int(opt.workers))
 print('testing set', len(dataset_test.datapath))
